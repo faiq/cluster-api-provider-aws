@@ -51,6 +51,7 @@ import (
 	"sigs.k8s.io/cluster-api-provider-aws/v2/pkg/cloud/services/securitygroup"
 	"sigs.k8s.io/cluster-api-provider-aws/v2/pkg/logger"
 	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	expclusterv1 "sigs.k8s.io/cluster-api/exp/api/v1beta1"
 	"sigs.k8s.io/cluster-api/util"
 	capiannotations "sigs.k8s.io/cluster-api/util/annotations"
 	"sigs.k8s.io/cluster-api/util/conditions"
@@ -285,8 +286,12 @@ func (r *AWSManagedControlPlaneReconciler) reconcileNormal(ctx context.Context, 
 			managedScope.Error(err, "non-fatal: failed to set up EventBridge")
 		}
 	}
+	nodeRoles, err := r.getRolesForWorkers(ctx, managedScope)
+	if err != nil {
+		return reconcile.Result{}, fmt.Errorf("failed to get roles for worker nodes for AWSManagedControlPlane %s/%s: %w", awsManagedControlPlane.Namespace, awsManagedControlPlane.Name, err)
 
-	if err := authService.ReconcileIAMAuthenticator(ctx); err != nil {
+	}
+	if err := authService.ReconcileIAMAuthenticator(ctx, nodeRoles); err != nil {
 		conditions.MarkFalse(awsManagedControlPlane, ekscontrolplanev1.IAMAuthenticatorConfiguredCondition, ekscontrolplanev1.IAMAuthenticatorConfigurationFailedReason, clusterv1.ConditionSeverityError, err.Error())
 		return reconcile.Result{}, errors.Wrapf(err, "failed to reconcile aws-iam-authenticator config for AWSManagedControlPlane %s/%s", awsManagedControlPlane.Namespace, awsManagedControlPlane.Name)
 	}
@@ -454,4 +459,82 @@ func (r *AWSManagedControlPlaneReconciler) managedClusterToManagedControlPlane(c
 			},
 		}
 	}
+}
+
+func (r *AWSManagedControlPlaneReconciler) getRolesForWorkers(ctx context.Context, managedScope *scope.ManagedControlPlaneScope) (map[string]struct{}, error) {
+	allRoles := make(map[string]struct{})
+	if err := r.getRolesForMachineDeployments(ctx, managedScope, allRoles); err != nil {
+		return nil, fmt.Errorf("failed to get roles from machine deployments %w", err)
+	}
+	if err := r.getRolesForMachinePools(ctx, managedScope, allRoles); err != nil {
+		return nil, fmt.Errorf("failed to get roles from machine pools %w", err)
+	}
+	return allRoles, nil
+}
+
+func (r *AWSManagedControlPlaneReconciler) getRolesForMachineDeployments(ctx context.Context, managedScope *scope.ManagedControlPlaneScope, allRoles map[string]struct{}) error {
+	deploymentList := &clusterv1.MachineDeploymentList{}
+	selectors := []client.ListOption{
+		client.InNamespace(managedScope.Namespace()),
+		client.MatchingLabels{
+			clusterv1.ClusterLabelName: managedScope.Cluster.Name,
+		},
+	}
+	err := r.Client.List(ctx, deploymentList, selectors...)
+	if err != nil {
+		return fmt.Errorf("failed to list machinedeplyments for cluster %s/%s: %w", managedScope.Namespace(), managedScope.Cluster.Name, err)
+	}
+
+	for _, deployment := range deploymentList.Items {
+		ref := deployment.Spec.Template.Spec.InfrastructureRef
+		if ref.Kind != "AWSMachineTemplate" {
+			continue
+		}
+		awsMachineTemplate := &infrav1.AWSMachineTemplate{}
+		err := r.Client.Get(ctx, client.ObjectKey{
+			Name:      ref.Name,
+			Namespace: ref.Namespace,
+		}, awsMachineTemplate)
+		if err != nil {
+			return fmt.Errorf("failed to get AWSMachine %s/%s: %w", ref.Namespace, ref.Name, err)
+		}
+		instanceProfile := awsMachineTemplate.Spec.Template.Spec.IAMInstanceProfile
+		if _, ok := allRoles[instanceProfile]; !ok && instanceProfile != "" {
+			allRoles[instanceProfile] = struct{}{}
+		}
+	}
+	return nil
+}
+
+func (r *AWSManagedControlPlaneReconciler) getRolesForMachinePools(ctx context.Context, managedScope *scope.ManagedControlPlaneScope, allRoles map[string]struct{}) error {
+	machinePoolList := &expclusterv1.MachinePoolList{}
+	selectors := []client.ListOption{
+		client.InNamespace(managedScope.Namespace()),
+		client.MatchingLabels{
+			clusterv1.ClusterLabelName: managedScope.Cluster.Name,
+		},
+	}
+	err := r.Client.List(ctx, machinePoolList, selectors...)
+	if err != nil {
+		return fmt.Errorf("failed to list machinedeplyments for cluster %s/%s: %w", managedScope.Namespace(), managedScope.Cluster.Name, err)
+	}
+	for _, pool := range machinePoolList.Items {
+		ref := pool.Spec.Template.Spec.InfrastructureRef
+		if ref.Kind != "AWSMachinePool" {
+			continue
+		}
+		awsMachinePool := &expinfrav1.AWSMachinePool{}
+		err := r.Client.Get(ctx, client.ObjectKey{
+			Name:      ref.Name,
+			Namespace: ref.Namespace,
+		}, awsMachinePool)
+		if err != nil {
+			return fmt.Errorf("failed to get AWSMachine %s/%s: %w", ref.Namespace, ref.Name, err)
+		}
+		instanceProfile := awsMachinePool.Spec.AWSLaunchTemplate.IamInstanceProfile
+		if _, ok := allRoles[instanceProfile]; !ok && instanceProfile != "" {
+			allRoles[instanceProfile] = struct{}{}
+		}
+	}
+	return nil
 }

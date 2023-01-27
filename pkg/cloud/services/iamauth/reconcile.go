@@ -21,22 +21,16 @@ import (
 	"fmt"
 
 	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/sts"
+	"github.com/aws/aws-sdk-go/service/iam"
 	"github.com/pkg/errors"
 	"k8s.io/klog/v2"
 
 	ekscontrolplanev1 "sigs.k8s.io/cluster-api-provider-aws/v2/controlplane/eks/api/v1beta2"
-	iamv1 "sigs.k8s.io/cluster-api-provider-aws/v2/iam/api/v1beta1"
 )
 
 // ReconcileIAMAuthenticator is used to create the aws-iam-authenticator in a cluster.
-func (s *Service) ReconcileIAMAuthenticator(ctx context.Context) error {
+func (s *Service) ReconcileIAMAuthenticator(ctx context.Context, nodeRoles map[string]struct{}) error {
 	s.scope.Info("Reconciling aws-iam-authenticator configuration", "cluster", klog.KRef(s.scope.Namespace(), s.scope.Name()))
-
-	accountID, err := s.getAccountID()
-	if err != nil {
-		return fmt.Errorf("getting account id: %w", err)
-	}
 
 	remoteClient, err := s.scope.RemoteClient()
 	if err != nil {
@@ -48,18 +42,22 @@ func (s *Service) ReconcileIAMAuthenticator(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("getting aws-iam-authenticator backend: %w", err)
 	}
-
-	roleARN := fmt.Sprintf("arn:aws:iam::%s:role/nodes%s", accountID, iamv1.DefaultNameSuffix)
-	nodesRoleMapping := ekscontrolplanev1.RoleMapping{
-		RoleARN: roleARN,
-		KubernetesMapping: ekscontrolplanev1.KubernetesMapping{
-			UserName: EC2NodeUserName,
-			Groups:   NodeGroups,
-		},
-	}
-	s.scope.Debug("Mapping node IAM role", "iam-role", nodesRoleMapping.RoleARN, "user", nodesRoleMapping.UserName)
-	if err := authBackend.MapRole(nodesRoleMapping); err != nil {
-		return fmt.Errorf("mapping iam node role: %w", err)
+	for roleName := range nodeRoles {
+		roleARN, err := s.getARNForRole(roleName)
+		if err != nil {
+			return fmt.Errorf("failed to get ARN for role %s: %w", roleARN, err)
+		}
+		nodesRoleMapping := ekscontrolplanev1.RoleMapping{
+			RoleARN: roleARN,
+			KubernetesMapping: ekscontrolplanev1.KubernetesMapping{
+				UserName: EC2NodeUserName,
+				Groups:   NodeGroups,
+			},
+		}
+		s.scope.Debug("Mapping node IAM role", "iam-role", nodesRoleMapping.RoleARN, "user", nodesRoleMapping.UserName)
+		if err := authBackend.MapRole(nodesRoleMapping); err != nil {
+			return fmt.Errorf("mapping iam node role: %w", err)
+		}
 	}
 
 	s.scope.Debug("Mapping additional IAM roles and users")
@@ -83,13 +81,11 @@ func (s *Service) ReconcileIAMAuthenticator(ctx context.Context) error {
 	return nil
 }
 
-func (s *Service) getAccountID() (string, error) {
-	input := &sts.GetCallerIdentityInput{}
-
-	out, err := s.STSClient.GetCallerIdentity(input)
+func (s *Service) getARNForRole(role string) (string, error) {
+	input := &iam.GetRoleInput{}
+	out, err := s.IAMClient.GetRole(input)
 	if err != nil {
-		return "", errors.Wrap(err, "unable to get caller identity")
+		return "", errors.Wrap(err, "unable to get role")
 	}
-
-	return aws.StringValue(out.Account), nil
+	return aws.StringValue(out.Role.Arn), nil
 }
