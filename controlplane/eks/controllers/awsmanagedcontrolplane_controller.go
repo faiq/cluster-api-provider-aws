@@ -482,7 +482,7 @@ func (r *AWSManagedControlPlaneReconciler) getRolesForMachineDeployments(ctx con
 	}
 	err := r.Client.List(ctx, deploymentList, selectors...)
 	if err != nil {
-		return fmt.Errorf("failed to list machinedeplyments for cluster %s/%s: %w", managedScope.Namespace(), managedScope.Cluster.Name, err)
+		return fmt.Errorf("failed to list machine deployments for cluster %s/%s: %w", managedScope.Namespace(), managedScope.Cluster.Name, err)
 	}
 
 	for _, deployment := range deploymentList.Items {
@@ -493,7 +493,7 @@ func (r *AWSManagedControlPlaneReconciler) getRolesForMachineDeployments(ctx con
 		awsMachineTemplate := &infrav1.AWSMachineTemplate{}
 		err := r.Client.Get(ctx, client.ObjectKey{
 			Name:      ref.Name,
-			Namespace: ref.Namespace,
+			Namespace: managedScope.Namespace(),
 		}, awsMachineTemplate)
 		if err != nil {
 			return fmt.Errorf("failed to get AWSMachine %s/%s: %w", ref.Namespace, ref.Name, err)
@@ -516,7 +516,7 @@ func (r *AWSManagedControlPlaneReconciler) getRolesForMachinePools(ctx context.C
 	}
 	err := r.Client.List(ctx, machinePoolList, selectors...)
 	if err != nil {
-		return fmt.Errorf("failed to list machinedeplyments for cluster %s/%s: %w", managedScope.Namespace(), managedScope.Cluster.Name, err)
+		return fmt.Errorf("failed to list machine pools for cluster %s/%s: %w", managedScope.Namespace(), managedScope.Cluster.Name, err)
 	}
 	for _, pool := range machinePoolList.Items {
 		ref := pool.Spec.Template.Spec.InfrastructureRef
@@ -526,7 +526,7 @@ func (r *AWSManagedControlPlaneReconciler) getRolesForMachinePools(ctx context.C
 		awsMachinePool := &expinfrav1.AWSMachinePool{}
 		err := r.Client.Get(ctx, client.ObjectKey{
 			Name:      ref.Name,
-			Namespace: ref.Namespace,
+			Namespace: managedScope.Namespace(),
 		}, awsMachinePool)
 		if err != nil {
 			return fmt.Errorf("failed to get AWSMachine %s/%s: %w", ref.Namespace, ref.Name, err)

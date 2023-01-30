@@ -82,7 +82,9 @@ func (s *Service) ReconcileIAMAuthenticator(ctx context.Context, nodeRoles map[s
 }
 
 func (s *Service) getARNForRole(role string) (string, error) {
-	input := &iam.GetRoleInput{}
+	input := &iam.GetRoleInput{
+		RoleName: aws.String(role),
+	}
 	out, err := s.IAMClient.GetRole(input)
 	if err != nil {
 		return "", errors.Wrap(err, "unable to get role")
