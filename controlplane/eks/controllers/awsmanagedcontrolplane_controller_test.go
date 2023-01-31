@@ -7,7 +7,6 @@ import (
 
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/gomega"
-
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/record"
@@ -16,10 +15,9 @@ import (
 	infrav1 "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
 	ekscontrolplanev1 "sigs.k8s.io/cluster-api-provider-aws/v2/controlplane/eks/api/v1beta2"
 	expinfrav1 "sigs.k8s.io/cluster-api-provider-aws/v2/exp/api/v1beta2"
+	"sigs.k8s.io/cluster-api-provider-aws/v2/pkg/cloud/scope"
 	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	expclusterv1 "sigs.k8s.io/cluster-api/exp/api/v1beta1"
-
-	"sigs.k8s.io/cluster-api-provider-aws/v2/pkg/cloud/scope"
 	"sigs.k8s.io/cluster-api/util"
 )
 
@@ -101,7 +99,6 @@ func TestAWSManagedControlPlaneReconcilerIntegrationTests(t *testing.T) {
 			g.Expect(testEnv.Cleanup(ctx, namespace, eksCluster, awsMP, mp, awsMachineTemplate, md, controllerIdentity)).To(Succeed())
 		})
 	})
-
 }
 
 func createEKSCluster(name, namespace string) *ekscontrolplanev1.AWSManagedControlPlane {

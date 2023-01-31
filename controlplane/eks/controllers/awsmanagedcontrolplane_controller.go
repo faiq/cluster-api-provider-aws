@@ -292,7 +292,6 @@ func (r *AWSManagedControlPlaneReconciler) reconcileNormal(ctx context.Context, 
 	nodeRoles, err := r.getRolesForWorkers(ctx, managedScope)
 	if err != nil {
 		return reconcile.Result{}, fmt.Errorf("failed to get roles for worker nodes for AWSManagedControlPlane %s/%s: %w", awsManagedControlPlane.Namespace, awsManagedControlPlane.Name, err)
-
 	}
 	if err := authService.ReconcileIAMAuthenticator(ctx, nodeRoles); err != nil {
 		conditions.MarkFalse(awsManagedControlPlane, ekscontrolplanev1.IAMAuthenticatorConfiguredCondition, ekscontrolplanev1.IAMAuthenticatorConfigurationFailedReason, clusterv1.ConditionSeverityError, err.Error())
