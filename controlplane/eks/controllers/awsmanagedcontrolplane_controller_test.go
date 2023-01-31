@@ -14,7 +14,7 @@ import (
 	"k8s.io/utils/pointer"
 
 	infrav1 "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
-	eksinfrav1 "sigs.k8s.io/cluster-api-provider-aws/v2/controlplane/eks/api/v1beta2"
+	ekscontrolplanev1 "sigs.k8s.io/cluster-api-provider-aws/v2/controlplane/eks/api/v1beta2"
 	expinfrav1 "sigs.k8s.io/cluster-api-provider-aws/v2/exp/api/v1beta2"
 	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	expclusterv1 "sigs.k8s.io/cluster-api/exp/api/v1beta1"
@@ -50,7 +50,7 @@ func TestAWSManagedControlPlaneReconcilerIntegrationTests(t *testing.T) {
 		namespace, err := testEnv.CreateNamespace(ctx, fmt.Sprintf("integ-test-%s", util.RandomString(5)))
 		g.Expect(err).To(BeNil())
 		ns := namespace.Name
-		name := "defualt"
+		name := "default"
 		eksCluster := createEKSCluster(name, ns)
 		g.Expect(testEnv.Create(ctx, eksCluster)).To(Succeed())
 		awsMP := createAWSMachinePoolForClusterWithInstanceProfile(name, ns, eksCluster.Name, "nodes.cluster-api-provider-aws.sigs.k8s.io")
@@ -104,8 +104,8 @@ func TestAWSManagedControlPlaneReconcilerIntegrationTests(t *testing.T) {
 
 }
 
-func createEKSCluster(name, namespace string) *eksinfrav1.AWSManagedControlPlane {
-	eksCluster := &eksinfrav1.AWSManagedControlPlane{
+func createEKSCluster(name, namespace string) *ekscontrolplanev1.AWSManagedControlPlane {
+	eksCluster := &ekscontrolplanev1.AWSManagedControlPlane{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,
@@ -113,7 +113,7 @@ func createEKSCluster(name, namespace string) *eksinfrav1.AWSManagedControlPlane
 				clusterv1.ClusterLabelName: name,
 			},
 		},
-		Spec: eksinfrav1.AWSManagedControlPlaneSpec{},
+		Spec: ekscontrolplanev1.AWSManagedControlPlaneSpec{},
 	}
 	return eksCluster
 }

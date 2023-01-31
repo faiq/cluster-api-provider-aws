@@ -26,7 +26,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 
 	infrav1 "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
-	eksinfrav1 "sigs.k8s.io/cluster-api-provider-aws/v2/controlplane/eks/api/v1beta2"
+	ekscontrolplanev1 "sigs.k8s.io/cluster-api-provider-aws/v2/controlplane/eks/api/v1beta2"
 	expinfrav1 "sigs.k8s.io/cluster-api-provider-aws/v2/exp/api/v1beta2"
 	"sigs.k8s.io/cluster-api-provider-aws/v2/test/helpers"
 	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
@@ -46,7 +46,7 @@ func TestMain(m *testing.M) {
 
 func setup() {
 	utilruntime.Must(infrav1.AddToScheme(scheme.Scheme))
-	utilruntime.Must(eksinfrav1.AddToScheme(scheme.Scheme))
+	utilruntime.Must(ekscontrolplanev1.AddToScheme(scheme.Scheme))
 	utilruntime.Must(expinfrav1.AddToScheme(scheme.Scheme))
 	utilruntime.Must(expclusterv1.AddToScheme(scheme.Scheme))
 	utilruntime.Must(clusterv1.AddToScheme(scheme.Scheme))
@@ -61,7 +61,7 @@ func setup() {
 	if err != nil {
 		panic(err)
 	}
-	if err := (&eksinfrav1.AWSManagedControlPlane{}).SetupWebhookWithManager(testEnv); err != nil {
+	if err := (&ekscontrolplanev1.AWSManagedControlPlane{}).SetupWebhookWithManager(testEnv); err != nil {
 		panic(fmt.Sprintf("Unable to setup  AWSManagedControlPlane webhook: %v", err))
 	}
 	if err := (&infrav1.AWSMachineTemplateWebhook{}).SetupWebhookWithManager(testEnv); err != nil {
