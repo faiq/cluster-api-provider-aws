@@ -522,20 +522,36 @@ func (r *AWSManagedControlPlaneReconciler) getRolesForMachinePools(ctx context.C
 	}
 	for _, pool := range machinePoolList.Items {
 		ref := pool.Spec.Template.Spec.InfrastructureRef
-		if ref.Kind != "AWSMachinePool" {
+		if ref.Kind == "AWSMachinePool" {
+			awsMachinePool := &expinfrav1.AWSMachinePool{}
+			fmt.Println("here")
+			err := r.Client.Get(ctx, client.ObjectKey{
+				Name:      ref.Name,
+				Namespace: managedScope.Namespace(),
+			}, awsMachinePool)
+			if err != nil {
+				return fmt.Errorf("failed to get AWSMachine %s/%s: %w", ref.Namespace, ref.Name, err)
+			}
+			instanceProfile := awsMachinePool.Spec.AWSLaunchTemplate.IamInstanceProfile
+			if _, ok := allRoles[instanceProfile]; !ok && instanceProfile != "" {
+				allRoles[instanceProfile] = struct{}{}
+			}
+		} else if ref.Kind == "AWSManagedMachinePool" {
+			awsMachineManagedPool := &expinfrav1.AWSManagedMachinePool{}
+			err := r.Client.Get(ctx, client.ObjectKey{
+				Name:      ref.Name,
+				Namespace: managedScope.Namespace(),
+			}, awsMachineManagedPool)
+			if err != nil {
+				return fmt.Errorf("failed to get AWSManagedMachinePool %s/%s: %w", ref.Namespace, ref.Name, err)
+			}
+			instanceProfile := awsMachineManagedPool.Spec.RoleName
+			if _, ok := allRoles[instanceProfile]; !ok && instanceProfile != "" {
+				allRoles[instanceProfile] = struct{}{}
+			}
+
+		} else {
 			continue
-		}
-		awsMachinePool := &expinfrav1.AWSMachinePool{}
-		err := r.Client.Get(ctx, client.ObjectKey{
-			Name:      ref.Name,
-			Namespace: managedScope.Namespace(),
-		}, awsMachinePool)
-		if err != nil {
-			return fmt.Errorf("failed to get AWSMachine %s/%s: %w", ref.Namespace, ref.Name, err)
-		}
-		instanceProfile := awsMachinePool.Spec.AWSLaunchTemplate.IamInstanceProfile
-		if _, ok := allRoles[instanceProfile]; !ok && instanceProfile != "" {
-			allRoles[instanceProfile] = struct{}{}
 		}
 	}
 	return nil
