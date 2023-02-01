@@ -527,7 +527,8 @@ func (r *AWSManagedControlPlaneReconciler) getRolesForMachinePools(ctx context.C
 	}
 	for _, pool := range machinePoolList.Items {
 		ref := pool.Spec.Template.Spec.InfrastructureRef
-		if ref.Kind == "AWSMachinePool" {
+		switch ref.Kind {
+		case "AWSMachinePool":
 			awsMachinePool := &expinfrav1.AWSMachinePool{}
 			fmt.Println("here")
 			err := r.Client.Get(ctx, client.ObjectKey{
@@ -541,7 +542,7 @@ func (r *AWSManagedControlPlaneReconciler) getRolesForMachinePools(ctx context.C
 			if _, ok := allRoles[instanceProfile]; !ok && instanceProfile != "" {
 				allRoles[instanceProfile] = struct{}{}
 			}
-		} else if ref.Kind == "AWSManagedMachinePool" {
+		case "AWSManagedMachinePool":
 			awsMachineManagedPool := &expinfrav1.AWSManagedMachinePool{}
 			err := r.Client.Get(ctx, client.ObjectKey{
 				Name:      ref.Name,
@@ -555,8 +556,7 @@ func (r *AWSManagedControlPlaneReconciler) getRolesForMachinePools(ctx context.C
 				allRoles[instanceProfile] = struct{}{}
 			}
 
-		} else {
-			continue
+		default:
 		}
 	}
 	return nil
