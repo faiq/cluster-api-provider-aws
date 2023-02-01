@@ -39,6 +39,7 @@ import (
 	ekscontrolplanev1 "sigs.k8s.io/cluster-api-provider-aws/v2/controlplane/eks/api/v1beta2"
 	expinfrav1 "sigs.k8s.io/cluster-api-provider-aws/v2/exp/api/v1beta2"
 	"sigs.k8s.io/cluster-api-provider-aws/v2/feature"
+	iamv1 "sigs.k8s.io/cluster-api-provider-aws/v2/iam/api/v1beta1"
 	"sigs.k8s.io/cluster-api-provider-aws/v2/pkg/cloud/scope"
 	"sigs.k8s.io/cluster-api-provider-aws/v2/pkg/cloud/services/awsnode"
 	"sigs.k8s.io/cluster-api-provider-aws/v2/pkg/cloud/services/ec2"
@@ -464,7 +465,11 @@ func (r *AWSManagedControlPlaneReconciler) managedClusterToManagedControlPlane(c
 }
 
 func (r *AWSManagedControlPlaneReconciler) getRolesForWorkers(ctx context.Context, managedScope *scope.ManagedControlPlaneScope) (map[string]struct{}, error) {
-	allRoles := make(map[string]struct{})
+	// previously this was the default role always added to the IAM authenticator config
+	// we'll keep this to not break existing behavior for users
+	allRoles := map[string]struct{}{
+		fmt.Sprintf("nodes%s", iamv1.DefaultNameSuffix): {},
+	}
 	if err := r.getRolesForMachineDeployments(ctx, managedScope, allRoles); err != nil {
 		return nil, fmt.Errorf("failed to get roles from machine deployments %w", err)
 	}
