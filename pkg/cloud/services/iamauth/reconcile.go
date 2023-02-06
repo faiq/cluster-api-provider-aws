@@ -25,12 +25,24 @@ import (
 	"github.com/pkg/errors"
 	"k8s.io/klog/v2"
 
+	infrav1 "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
 	ekscontrolplanev1 "sigs.k8s.io/cluster-api-provider-aws/v2/controlplane/eks/api/v1beta2"
+	expinfrav1 "sigs.k8s.io/cluster-api-provider-aws/v2/exp/api/v1beta2"
+	iamv1 "sigs.k8s.io/cluster-api-provider-aws/v2/iam/api/v1beta1"
+	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	expclusterv1 "sigs.k8s.io/cluster-api/exp/api/v1beta1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // ReconcileIAMAuthenticator is used to create the aws-iam-authenticator in a cluster.
-func (s *Service) ReconcileIAMAuthenticator(ctx context.Context, nodeRoles map[string]struct{}) error {
+func (s *Service) ReconcileIAMAuthenticator(ctx context.Context) error {
 	s.scope.Info("Reconciling aws-iam-authenticator configuration", "cluster", klog.KRef(s.scope.Namespace(), s.scope.Name()))
+
+	nodeRoles, err := s.getRolesForWorkers(ctx)
+	if err != nil {
+		s.scope.Error(err, "getting roles for workers")
+		return fmt.Errorf("getting roles for workers: %w", err)
+	}
 
 	remoteClient, err := s.scope.RemoteClient()
 	if err != nil {
@@ -42,6 +54,7 @@ func (s *Service) ReconcileIAMAuthenticator(ctx context.Context, nodeRoles map[s
 	if err != nil {
 		return fmt.Errorf("getting aws-iam-authenticator backend: %w", err)
 	}
+
 	for roleName := range nodeRoles {
 		roleARN, err := s.getARNForRole(roleName)
 		if err != nil {
@@ -90,4 +103,102 @@ func (s *Service) getARNForRole(role string) (string, error) {
 		return "", errors.Wrap(err, "unable to get role")
 	}
 	return aws.StringValue(out.Role.Arn), nil
+}
+
+func (s *Service) getRolesForWorkers(ctx context.Context) (map[string]struct{}, error) {
+	// previously this was the default role always added to the IAM authenticator config
+	// we'll keep this to not break existing behavior for users
+	allRoles := map[string]struct{}{
+		fmt.Sprintf("nodes%s", iamv1.DefaultNameSuffix): {},
+	}
+	if err := s.getRolesForMachineDeployments(ctx, allRoles); err != nil {
+		return nil, fmt.Errorf("failed to get roles from machine deployments %w", err)
+	}
+	if err := s.getRolesForMachinePools(ctx, allRoles); err != nil {
+		return nil, fmt.Errorf("failed to get roles from machine pools %w", err)
+	}
+	return allRoles, nil
+}
+
+func (s *Service) getRolesForMachineDeployments(ctx context.Context, allRoles map[string]struct{}) error {
+	deploymentList := &clusterv1.MachineDeploymentList{}
+	selectors := []client.ListOption{
+		client.InNamespace(s.scope.Namespace()),
+		client.MatchingLabels{
+			clusterv1.ClusterLabelName: s.scope.Name(),
+		},
+	}
+	err := s.client.List(ctx, deploymentList, selectors...)
+	if err != nil {
+		return fmt.Errorf("failed to list machine deployments for cluster %s/%s: %w", s.scope.Namespace(), s.scope.Name(), err)
+	}
+
+	for _, deployment := range deploymentList.Items {
+		ref := deployment.Spec.Template.Spec.InfrastructureRef
+		if ref.Kind != "AWSMachineTemplate" {
+			continue
+		}
+		awsMachineTemplate := &infrav1.AWSMachineTemplate{}
+		err := s.client.Get(ctx, client.ObjectKey{
+			Name:      ref.Name,
+			Namespace: s.scope.Namespace(),
+		}, awsMachineTemplate)
+		if err != nil {
+			return fmt.Errorf("failed to get AWSMachine %s/%s: %w", ref.Namespace, ref.Name, err)
+		}
+		instanceProfile := awsMachineTemplate.Spec.Template.Spec.IAMInstanceProfile
+		if _, ok := allRoles[instanceProfile]; !ok && instanceProfile != "" {
+			allRoles[instanceProfile] = struct{}{}
+		}
+	}
+	return nil
+}
+
+func (s *Service) getRolesForMachinePools(ctx context.Context, allRoles map[string]struct{}) error {
+	machinePoolList := &expclusterv1.MachinePoolList{}
+	selectors := []client.ListOption{
+		client.InNamespace(s.scope.Namespace()),
+		client.MatchingLabels{
+			clusterv1.ClusterLabelName: s.scope.Name(),
+		},
+	}
+	err := s.client.List(ctx, machinePoolList, selectors...)
+	if err != nil {
+		return fmt.Errorf("failed to list machine pools for cluster %s/%s: %w", s.scope.Namespace(), s.scope.Name(), err)
+	}
+	for _, pool := range machinePoolList.Items {
+		ref := pool.Spec.Template.Spec.InfrastructureRef
+		switch ref.Kind {
+		case "AWSMachinePool":
+			awsMachinePool := &expinfrav1.AWSMachinePool{}
+			fmt.Println("here")
+			err := s.client.Get(ctx, client.ObjectKey{
+				Name:      ref.Name,
+				Namespace: s.scope.Namespace(),
+			}, awsMachinePool)
+			if err != nil {
+				return fmt.Errorf("failed to get AWSMachine %s/%s: %w", ref.Namespace, ref.Name, err)
+			}
+			instanceProfile := awsMachinePool.Spec.AWSLaunchTemplate.IamInstanceProfile
+			if _, ok := allRoles[instanceProfile]; !ok && instanceProfile != "" {
+				allRoles[instanceProfile] = struct{}{}
+			}
+		case "AWSManagedMachinePool":
+			awsMachineManagedPool := &expinfrav1.AWSManagedMachinePool{}
+			err := s.client.Get(ctx, client.ObjectKey{
+				Name:      ref.Name,
+				Namespace: s.scope.Namespace(),
+			}, awsMachineManagedPool)
+			if err != nil {
+				return fmt.Errorf("failed to get AWSManagedMachinePool %s/%s: %w", ref.Namespace, ref.Name, err)
+			}
+			instanceProfile := awsMachineManagedPool.Spec.RoleName
+			if _, ok := allRoles[instanceProfile]; !ok && instanceProfile != "" {
+				allRoles[instanceProfile] = struct{}{}
+			}
+
+		default:
+		}
+	}
+	return nil
 }
