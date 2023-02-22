@@ -1,0 +1,45 @@
+on:
+  push:
+    tags:
+      - 'v*'
+
+name: Release Cluster API Provider AWS
+jobs:
+  release-to-github:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+          ref: ${{ github.ref }}
+
+      - name: Setup Go
+        uses: actions/setup-go@v3
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+
+      - name: Docker build all
+        run: make docker-build-all
+        env:
+          REGISTRY: docker.io/faiq
+          PROD_REGISTRY: docker.io/faiq
+          TAG: ${{ github.ref_name }}
+
+      - name: Docker push all
+        run: make docker-push-all
+        env:
+          REGISTRY: docker.io/faiq
+          PROD_REGISTRY: docker.io/faiq
+          TAG: ${{ github.ref_name }}
+
+      - name: Release
+        run: make release
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+
+      - name: Create GH Release
+        run: make create-gh-release
+
+      - name: Upload GH Release
+        run: make upload-gh-release
